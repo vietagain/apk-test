@@ -1,0 +1,4 @@
+<resources>
+    <string name="app_name">Y Launcher Lite</string>
+    <string name="accessibility_desc">Cho phép nhấn giữ phím Tăng âm lượng (Volume Up) để khóa/tắt màn hình thay nút nguồn.</string>
+</resources>

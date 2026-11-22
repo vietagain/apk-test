@@ -1,0 +1,429 @@
+package com.vietvuive.ylauncher
+
+import android.content.Context
+import android.content.Intent
+import android.graphics.Color
+import android.graphics.drawable.GradientDrawable
+import android.net.wifi.WifiManager
+import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
+import android.provider.Settings
+import android.text.format.Formatter
+import android.view.Gravity
+import android.view.View
+import android.view.WindowManager
+import android.widget.Button
+import android.widget.GridLayout
+import android.widget.LinearLayout
+import android.widget.TextView
+import android.widget.Toast
+import androidx.appcompat.app.AlertDialog
+import androidx.appcompat.app.AppCompatActivity
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
+import java.util.concurrent.Executors
+
+class MainActivity : AppCompatActivity() {
+
+    private val mainHandler = Handler(Looper.getMainLooper())
+    private val ioExecutor = Executors.newSingleThreadExecutor()
+    private var webServer: ConfigWebServer? = null
+
+    private lateinit var rootLayout: LinearLayout
+    private lateinit var tvTime: TextView
+    private lateinit var tvDateSolar: TextView
+    private lateinit var tvDateLunar: TextView
+    private lateinit var tvStatusHa: TextView
+
+    private lateinit var tvWeatherState: TextView
+    private lateinit var tvOutdoorTemp: TextView
+    private lateinit var tvSensorTemp: TextView
+    private lateinit var tvSensorHum: TextView
+    private lateinit var tvSensorPower: TextView
+
+    private lateinit var gridTiles: GridLayout
+    private lateinit var bannerWebConfig: LinearLayout
+    private lateinit var tvWebUrl: TextView
+
+    private var currentConfig: AppConfig? = null
+    private var latestStates: Map<String, EntityState> = emptyMap()
+    private val tileViews = HashMap<String, View>()
+
+    private val clockRunnable = object : Runnable {
+        override fun run() {
+            updateClock()
+            mainHandler.postDelayed(this, 1000)
+        }
+    }
+
+    private val pollRunnable = object : Runnable {
+        override fun run() {
+            val cfg = currentConfig ?: return
+            ioExecutor.execute {
+                val states = HaClient.fetchAllStates(cfg.haUrl, cfg.haToken)
+                mainHandler.post {
+                    if (states != null) {
+                        latestStates = states
+                        tvStatusHa.text = "● HA Online"
+                        tvStatusHa.setTextColor(Color.parseColor("#22C55E"))
+                        updateAllUiValues()
+                    } else {
+                        tvStatusHa.text = "● Mất kết nối HA"
+                        tvStatusHa.setTextColor(Color.parseColor("#EF4444"))
+                    }
+                }
+            }
+            mainHandler.postDelayed(this, (cfg.refreshIntervalSec * 1000L))
+        }
+    }
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        setContentView(R.layout.activity_main)
+
+        bindViews()
+        reloadConfigAndBuildTiles()
+    }
+
+    private fun bindViews() {
+        rootLayout = findViewById(R.id.root_layout)
+        tvTime = findViewById(R.id.tv_time)
+        tvDateSolar = findViewById(R.id.tv_date_solar)
+        tvDateLunar = findViewById(R.id.tv_date_lunar)
+        tvStatusHa = findViewById(R.id.tv_status_ha)
+
+        tvWeatherState = findViewById(R.id.tv_weather_state)
+        tvOutdoorTemp = findViewById(R.id.tv_outdoor_temp)
+        tvSensorTemp = findViewById(R.id.tv_sensor_temp)
+        tvSensorHum = findViewById(R.id.tv_sensor_hum)
+        tvSensorPower = findViewById(R.id.tv_sensor_power)
+
+        gridTiles = findViewById(R.id.grid_tiles)
+        bannerWebConfig = findViewById(R.id.banner_web_config)
+        tvWebUrl = findViewById(R.id.tv_web_url)
+
+        findViewById<Button>(R.id.btn_web_config).setOnClickListener {
+            toggleWebServer()
+        }
+
+        findViewById<Button>(R.id.btn_apps).setOnClickListener {
+            showAppDrawerDialog()
+        }
+
+        findViewById<Button>(R.id.btn_key_map).setOnClickListener {
+            startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
+            Toast.makeText(this, "Bật mục 'Y Launcher - Giữ Tăng Âm Lượng'", Toast.LENGTH_LONG).show()
+        }
+    }
+
+    private fun reloadConfigAndBuildTiles() {
+        val cfg = ConfigManager.loadConfig(this)
+        currentConfig = cfg
+        applyTheme(cfg.theme)
+        buildGridTiles(cfg)
+        updateAllUiValues()
+    }
+
+    private fun applyTheme(theme: String) {
+        val bgColor = when (theme) {
+            "green" -> Color.parseColor("#0B1914")
+            "scifi" -> Color.parseColor("#090D16")
+            else -> Color.parseColor("#0F141A")
+        }
+        rootLayout.setBackgroundColor(bgColor)
+    }
+
+    private fun buildGridTiles(cfg: AppConfig) {
+        gridTiles.removeAllViews()
+        tileViews.clear()
+
+        val colCount = if (resources.configuration.screenWidthDp >= 600) 4 else 2
+        gridTiles.columnCount = colCount
+
+        for (tile in cfg.tiles) {
+            val view = when (tile.type) {
+                "gate" -> createGateTileView(tile)
+                "sensor" -> createSensorTileView(tile)
+                else -> createSwitchTileView(tile)
+            }
+            val params = GridLayout.LayoutParams().apply {
+                width = 0
+                height = GridLayout.LayoutParams.WRAP_CONTENT
+                columnSpec = GridLayout.spec(GridLayout.UNDEFINED, 1f)
+                setMargins(8, 8, 8, 8)
+            }
+            gridTiles.addView(view, params)
+            tileViews[tile.id] = view
+        }
+    }
+
+    private fun makeCardBg(strokeColor: String = "#263241", fillColor: String = "#17202A"): GradientDrawable {
+        return GradientDrawable().apply {
+            shape = GradientDrawable.RECTANGLE
+            cornerRadius = 20f
+            setColor(Color.parseColor(fillColor))
+            setStroke(2, Color.parseColor(strokeColor))
+        }
+    }
+
+    private fun createSwitchTileView(tile: TileConfig): View {
+        val box = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(24, 20, 24, 20)
+            background = makeCardBg()
+        }
+        val tvTitle = TextView(this).apply {
+            text = tile.name
+            textSize = 16f
+            setTextColor(Color.WHITE)
+            maxLines = 1
+        }
+        val tvState = TextView(this).apply {
+            tag = "state"
+            text = "Đang tải..."
+            textSize = 13f
+            setTextColor(Color.parseColor("#94A3B8"))
+            setPadding(0, 8, 0, 0)
+        }
+        box.addView(tvTitle)
+        box.addView(tvState)
+
+        box.setOnClickListener {
+            val cfg = currentConfig ?: return@setOnClickListener
+            tvState.text = "Đang gửi lệnh..."
+            ioExecutor.execute {
+                val ok = HaClient.callService(cfg.haUrl, cfg.haToken, tile.entityId, "toggle")
+                if (ok) {
+                    Thread.sleep(400)
+                    val states = HaClient.fetchAllStates(cfg.haUrl, cfg.haToken)
+                    mainHandler.post {
+                        if (states != null) {
+                            latestStates = states
+                            updateAllUiValues()
+                        }
+                    }
+                }
+            }
+        }
+        return box
+    }
+
+    private fun createSensorTileView(tile: TileConfig): View {
+        val box = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(24, 20, 24, 20)
+            background = makeCardBg("#1E3A5F", "#122338")
+        }
+        val tvTitle = TextView(this).apply {
+            text = tile.name
+            textSize = 15f
+            setTextColor(Color.parseColor("#CBD5E1"))
+            maxLines = 1
+        }
+        val tvVal = TextView(this).apply {
+            tag = "state"
+            text = "-- ${tile.unit}"
+            textSize = 20f
+            setTextColor(Color.parseColor("#38BDF8"))
+            setPadding(0, 6, 0, 0)
+        }
+        box.addView(tvTitle)
+        box.addView(tvVal)
+        return box
+    }
+
+    private fun createGateTileView(tile: TileConfig): View {
+        val box = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(20, 16, 20, 16)
+            background = makeCardBg("#3B2F4A", "#1E1926")
+        }
+        val header = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+        }
+        val tvTitle = TextView(this).apply {
+            text = tile.name
+            textSize = 15f
+            setTextColor(Color.WHITE)
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+        }
+        val tvState = TextView(this).apply {
+            tag = "state"
+            text = "--"
+            textSize = 13f
+            setTextColor(Color.parseColor("#C084FC"))
+        }
+        header.addView(tvTitle)
+        header.addView(tvState)
+        box.addView(header)
+
+        val btnRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER
+            setPadding(0, 12, 0, 0)
+        }
+        val actions = listOf("Mở" to "open", "Dừng" to "stop", "Đóng" to "close")
+        for ((label, cmd) in actions) {
+            val btn = Button(this).apply {
+                text = label
+                textSize = 12f
+                setTextColor(Color.WHITE)
+                background = makeCardBg("#475569", "#334155")
+                layoutParams = LinearLayout.LayoutParams(0, 76, 1f).apply {
+                    setMargins(4, 0, 4, 0)
+                }
+                setOnClickListener {
+                    val cfg = currentConfig ?: return@setOnClickListener
+                    tvState.text = "Gửi: $label"
+                    ioExecutor.execute {
+                        HaClient.callService(cfg.haUrl, cfg.haToken, tile.entityId, cmd)
+                    }
+                }
+            }
+            btnRow.addView(btn)
+        }
+        box.addView(btnRow)
+        return box
+    }
+
+    private fun updateAllUiValues() {
+        val cfg = currentConfig ?: return
+
+        val wState = latestStates[cfg.weatherEntity]
+        if (wState != null) {
+            tvWeatherState.text = translateWeather(wState.state)
+            val temp = wState.attributes.optString("temperature", "--")
+            tvOutdoorTemp.text = "Ngoài trời: $temp°C"
+        }
+
+        val tState = latestStates[cfg.tempEntity]?.state ?: "--"
+        val hState = latestStates[cfg.humEntity]?.state ?: "--"
+        val pState = latestStates[cfg.powerEntity]?.state ?: "--"
+
+        tvSensorTemp.text = "🌡 $tState°C"
+        tvSensorHum.text = "💧 $hState%"
+        tvSensorPower.text = "⚡ ${pState}W"
+
+        for (tile in cfg.tiles) {
+            val view = tileViews[tile.id] ?: continue
+            val tvState = view.findViewWithTag<TextView>("state") ?: continue
+            val stObj = latestStates[tile.entityId]
+            val rawState = stObj?.state ?: "unavailable"
+
+            when (tile.type) {
+                "sensor" -> {
+                    val unit = tile.unit.ifBlank { stObj?.attributes?.optString("unit_of_measurement", "") ?: "" }
+                    tvState.text = "$rawState $unit".trim()
+                }
+                "gate" -> {
+                    tvState.text = when (rawState) {
+                        "open" -> "Đang mở"
+                        "opening" -> "Đang chạy mở..."
+                        "closed" -> "Đã đóng"
+                        "closing" -> "Đang chạy đóng..."
+                        else -> rawState
+                    }
+                }
+                else -> {
+                    val isOn = rawState == "on" || rawState == "heat" || rawState == "cool" || rawState == "auto"
+                    tvState.text = if (isOn) "BẬT ($rawState)" else "TẮT"
+                    tvState.setTextColor(if (isOn) Color.parseColor("#4ADE80") else Color.parseColor("#94A3B8"))
+                    view.background = if (isOn) makeCardBg("#22C55E", "#132A1E") else makeCardBg()
+                }
+            }
+        }
+    }
+
+    private fun translateWeather(state: String): String {
+        return when (state.lowercase()) {
+            "sunny", "clear-night" -> "☀️ Trời quang"
+            "partlycloudy" -> "⛅ Ít mây"
+            "cloudy" -> "☁️ Nhiều mây"
+            "rainy" -> "🌧 Mưa"
+            "pouring" -> "⛈ Mưa to"
+            "lightning", "lightning-rainy" -> "🌩 Giông sét"
+            "fog" -> "🌫 Sương mù"
+            else -> "🌤 $state"
+        }
+    }
+
+    private fun updateClock() {
+        val now = Date()
+        tvTime.text = SimpleDateFormat("HH:mm", Locale.getDefault()).format(now)
+        tvDateSolar.text = SimpleDateFormat("EEEE, dd/MM/yyyy", Locale("vi", "VN")).format(now)
+        tvDateLunar.text = LunarCalendar.getTodayLunarString()
+    }
+
+    private fun toggleWebServer() {
+        if (webServer != null) {
+            webServer?.stop()
+            webServer = null
+            bannerWebConfig.visibility = View.GONE
+            Toast.makeText(this, "Đã tắt máy chủ cấu hình Web", Toast.LENGTH_SHORT).show()
+        } else {
+            try {
+                val server = ConfigWebServer(this, 8080) {
+                    mainHandler.post { reloadConfigAndBuildTiles() }
+                }
+                server.start()
+                webServer = server
+                val ip = getLocalIpAddress()
+                tvWebUrl.text = "Mở trình duyệt truy cập: http://$ip:8080 (Tự tắt sau 15 phút)"
+                bannerWebConfig.visibility = View.VISIBLE
+                mainHandler.postDelayed({
+                    if (webServer != null) toggleWebServer()
+                }, 15 * 60 * 1000L)
+            } catch (e: Exception) {
+                Toast.makeText(this, "Lỗi bật Web Server: ${e.message}", Toast.LENGTH_LONG).show()
+            }
+        }
+    }
+
+    @Suppress("DEPRECATION")
+    private fun getLocalIpAddress(): String {
+        val wm = applicationContext.getSystemService(Context.WIFI_SERVICE) as WifiManager
+        val ipInt = wm.connectionInfo.ipAddress
+        return if (ipInt != 0) Formatter.formatIpAddress(ipInt) else "192.168.1.xxx"
+    }
+
+    private fun showAppDrawerDialog() {
+        val pm = packageManager
+        val intent = Intent(Intent.ACTION_MAIN, null).apply {
+            addCategory(Intent.CATEGORY_LAUNCHER)
+        }
+        val apps = pm.queryIntentActivities(intent, 0)
+            .sortedBy { it.loadLabel(pm).toString().lowercase() }
+
+        val names = apps.map { it.loadLabel(pm).toString() }.toTypedArray()
+        AlertDialog.Builder(this)
+            .setTitle("Ứng dụng trên máy")
+            .setItems(names) { _, which ->
+                val pkg = apps[which].activityInfo.packageName
+                val launch = pm.getLaunchIntentForPackage(pkg)
+                if (launch != null) startActivity(launch)
+            }
+            .setNegativeButton("Đóng", null)
+            .show()
+    }
+
+    override fun onResume() {
+        super.onResume()
+        mainHandler.post(clockRunnable)
+        mainHandler.post(pollRunnable)
+    }
+
+    override fun onPause() {
+        super.onPause()
+        mainHandler.removeCallbacks(clockRunnable)
+        mainHandler.removeCallbacks(pollRunnable)
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        webServer?.stop()
+        ioExecutor.shutdownNow()
+    }
+}

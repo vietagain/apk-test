@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Y Launcher Lite - Cấu hình Web</title>
+<style>
+  body { font-family: system-ui, sans-serif; background: #0f172a; color: #f8fafc; margin: 0; padding: 16px; }
+  .container { max-width: 720px; margin: auto; }
+  h2 { color: #38bdf8; margin-top: 0; }
+  .card { background: #1e293b; border-radius: 12px; padding: 16px; margin-bottom: 16px; border: 1px solid #334155; }
+  label { display: block; font-size: 13px; color: #94a3b8; margin-bottom: 4px; margin-top: 10px; }
+  input, select { width: 100%; box-sizing: border-box; padding: 10px; border-radius: 8px; border: 1px solid #475569; background: #0f172a; color: #fff; font-size: 14px; }
+  .row { display: flex; gap: 10px; }
+  .row > div { flex: 1; }
+  button { padding: 10px 16px; border: none; border-radius: 8px; font-weight: bold; cursor: pointer; font-size: 14px; }
+  .btn-save { background: #22c55e; color: #052e16; width: 100%; font-size: 16px; margin-top: 8px; }
+  .btn-add { background: #38bdf8; color: #082f49; margin-top: 10px; }
+  .btn-del { background: #ef4444; color: #fff; padding: 6px 10px; font-size: 12px; }
+  .tile-item { background: #0f172a; padding: 12px; border-radius: 8px; margin-top: 10px; border: 1px solid #334155; }
+  .tile-header { display: flex; justify-content: space-between; align-items: center; }
+  #msg { position: fixed; bottom: 16px; right: 16px; background: #22c55e; color: #000; padding: 12px 20px; border-radius: 8px; display: none; font-weight: bold; }
+</style>
+</head>
+<body>
+<div class="container">
+  <h2>⚡ Y Launcher Lite - Cấu hình Home Assistant</h2>
+
+  <div class="card">
+    <h3>1. Kết nối Home Assistant & Giao diện</h3>
+    <label>Địa chỉ Home Assistant (URL)</label>
+    <input id="haUrl" placeholder="http://192.168.1.100:8123">
+
+    <label>Long-Lived Access Token</label>
+    <input id="haToken" type="password" placeholder="Dán mã Token từ HA vào đây...">
+
+    <div class="row">
+      <div>
+        <label>Chu kỳ cập nhật (giây)</label>
+        <input id="refreshIntervalSec" type="number" min="1" max="60" value="3">
+      </div>
+      <div>
+        <label>Giao diện (Theme)</label>
+        <select id="theme">
+          <option value="dark">Tối (Dark)</option>
+          <option value="green">Xanh lá (Green)</option>
+          <option value="scifi">Sci-Fi</option>
+        </select>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h3>2. Thời tiết & Cảm biến đầu trang</h3>
+    <div class="row">
+      <div>
+        <label>Entity Thời tiết (weather.*)</label>
+        <input id="weatherEntity" placeholder="weather.forecast_home">
+      </div>
+      <div>
+        <label>Cảm biến Công suất (W)</label>
+        <input id="powerEntity" placeholder="sensor.cong_suat_tong">
+      </div>
+    </div>
+    <div class="row">
+      <div>
+        <label>Cảm biến Nhiệt độ (°C)</label>
+        <input id="tempEntity" placeholder="sensor.nhiet_do">
+      </div>
+      <div>
+        <label>Cảm biến Độ ẩm (%)</label>
+        <input id="humEntity" placeholder="sensor.do_am">
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h3>3. Danh sách Thẻ điều khiển & Cảm biến lưới</h3>
+    <div id="tilesList"></div>
+    <button class="btn-add" onclick="addTile()">+ Thêm thẻ mới</button>
+  </div>
+
+  <button class="btn-save" onclick="saveConfig()">💾 LƯU & ÁP DỤNG NGAY</button>
+</div>
+
+<div id="msg">Đã lưu cấu hình thành công!</div>
+
+<script>
+let configData = { tiles: [] };
+
+async function loadConfig() {
+  const res = await fetch('/api/config');
+  configData = await res.json();
+  document.getElementById('haUrl').value = configData.haUrl || '';
+  document.getElementById('haToken').value = configData.haToken || '';
+  document.getElementById('refreshIntervalSec').value = configData.refreshIntervalSec || 3;
+  document.getElementById('theme').value = configData.theme || 'dark';
+  document.getElementById('weatherEntity').value = configData.weatherEntity || '';
+  document.getElementById('tempEntity').value = configData.tempEntity || '';
+  document.getElementById('humEntity').value = configData.humEntity || '';
+  document.getElementById('powerEntity').value = configData.powerEntity || '';
+  renderTiles();
+}
+
+function renderTiles() {
+  const box = document.getElementById('tilesList');
+  box.innerHTML = '';
+  (configData.tiles || []).forEach((t, idx) => {
+    box.innerHTML += `
+      <div class="tile-item">
+        <div class="tile-header">
+          <strong>Thẻ #${idx + 1}</strong>
+          <button class="btn-del" onclick="removeTile(${idx})">Xóa</button>
+        </div>
+        <div class="row">
+          <div>
+            <label>Loại thẻ</label>
+            <select onchange="configData.tiles[${idx}].type = this.value">
+              <option value="switch" ${t.type==='switch'?'selected':''}>Công tắc / Đèn / Quạt</option>
+              <option value="gate" ${t.type==='gate'?'selected':''}>Cổng / Cửa cuốn (Mở-Dừng-Đóng)</option>
+              <option value="sensor" ${t.type==='sensor'?'selected':''}>Cảm biến hiển thị số</option>
+            </select>
+          </div>
+          <div>
+            <label>Tên hiển thị</label>
+            <input value="${t.name || ''}" onchange="configData.tiles[${idx}].name = this.value">
+          </div>
+        </div>
+        <div class="row">
+          <div>
+            <label>Entity ID trong Home Assistant</label>
+            <input value="${t.entityId || ''}" placeholder="light.den_1" onchange="configData.tiles[${idx}].entityId = this.value">
+          </div>
+          <div>
+            <label>Đơn vị (nếu là cảm biến)</label>
+            <input value="${t.unit || ''}" placeholder="W, V, %, °C..." onchange="configData.tiles[${idx}].unit = this.value">
+          </div>
+        </div>
+      </div>`;
+  });
+}
+
+function addTile() {
+  configData.tiles.push({
+    id: 'tile_' + Date.now(),
+    type: 'switch',
+    name: 'Thiết bị mới',
+    entityId: 'switch.ten_thiet_bi',
+    unit: ''
+  });
+  renderTiles();
+}
+
+function removeTile(idx) {
+  configData.tiles.splice(idx, 1);
+  renderTiles();
+}
+
+async function saveConfig() {
+  configData.haUrl = document.getElementById('haUrl').value;
+  configData.haToken = document.getElementById('haToken').value;
+  configData.refreshIntervalSec = parseInt(document.getElementById('refreshIntervalSec').value) || 3;
+  configData.theme = document.getElementById('theme').value;
+  configData.weatherEntity = document.getElementById('weatherEntity').value;
+  configData.tempEntity = document.getElementById('tempEntity').value;
+  configData.humEntity = document.getElementById('humEntity').value;
+  configData.powerEntity = document.getElementById('powerEntity').value;
+
+  const res = await fetch('/api/config', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(configData)
+  });
+  if (res.ok) {
+    const m = document.getElementById('msg');
+    m.style.display = 'block';
+    setTimeout(() => m.style.display = 'none', 2500);
+  }
+}
+
+loadConfig();
+</script>
+</body>
+</html>

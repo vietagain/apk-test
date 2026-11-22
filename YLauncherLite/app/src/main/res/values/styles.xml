@@ -1,0 +1,7 @@
+<resources>
+    <style name="Theme.YLauncherLite" parent="Theme.AppCompat.NoActionBar">
+        <item name="android:windowBackground">#0F141A</item>
+        <item name="android:statusBarColor">#0F141A</item>
+        <item name="android:navigationBarColor">#0F141A</item>
+    </style>
+</resources>
