@@ -295,13 +295,13 @@ class MainActivity : AppCompatActivity() {
         val wState = latestStates[cfg.weatherEntity]
         if (wState != null) {
             tvWeatherState.text = translateWeather(wState.state)
-            val temp = wState.attributes.optString("temperature", "--")
+            val temp = formatNumber(wState.attributes.optString("temperature", "--"))
             tvOutdoorTemp.text = "Ngoài trời: $temp°C"
         }
 
-        val tState = latestStates[cfg.tempEntity]?.state ?: "--"
-        val hState = latestStates[cfg.humEntity]?.state ?: "--"
-        val pState = latestStates[cfg.powerEntity]?.state ?: "--"
+        val tState = formatNumber(latestStates[cfg.tempEntity]?.state)
+        val hState = formatNumber(latestStates[cfg.humEntity]?.state)
+        val pState = formatNumber(latestStates[cfg.powerEntity]?.state)
 
         tvSensorTemp.text = "🌡 $tState°C"
         tvSensorHum.text = "💧 $hState%"
@@ -315,8 +315,9 @@ class MainActivity : AppCompatActivity() {
 
             when (tile.type) {
                 "sensor" -> {
+                    val formattedVal = formatNumber(rawState)
                     val unit = tile.unit.ifBlank { stObj?.attributes?.optString("unit_of_measurement", "") ?: "" }
-                    tvState.text = "$rawState $unit".trim()
+                    tvState.text = "$formattedVal $unit".trim()
                 }
                 "gate" -> {
                     tvState.text = when (rawState) {
@@ -324,6 +325,7 @@ class MainActivity : AppCompatActivity() {
                         "opening" -> "Đang chạy mở..."
                         "closed" -> "Đã đóng"
                         "closing" -> "Đang chạy đóng..."
+                        "unavailable", "unknown" -> "--"
                         else -> rawState
                     }
                 }
@@ -334,6 +336,16 @@ class MainActivity : AppCompatActivity() {
                     view.background = if (isOn) makeCardBg("#22C55E", "#132A1E") else makeCardBg()
                 }
             }
+        }
+    }
+
+    private fun formatNumber(raw: String?): String {
+        if (raw == null || raw == "unavailable" || raw == "unknown" || raw.isBlank()) return "--"
+        val num = raw.toDoubleOrNull() ?: return raw
+        return if (num % 1.0 == 0.0) {
+            num.toInt().toString()
+        } else {
+            String.format(Locale.US, "%.1f", num)
         }
     }
 
