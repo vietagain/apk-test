@@ -2,6 +2,7 @@ package com.vietvuive.ylauncher
 
 import android.content.Context
 import fi.iki.elonen.NanoHTTPD
+import java.nio.charset.StandardCharsets
 
 class ConfigWebServer(
     private val context: Context,
@@ -19,24 +20,37 @@ class ConfigWebServer(
                 newFixedLengthResponse(Response.Status.OK, "application/json; charset=utf-8", json)
             }
             uri == "/api/config" && method == Method.POST -> {
-                val files = HashMap<String, String>()
                 try {
-                    session.parseBody(files)
-                    val body = files["postData"] ?: ""
+                    val contentLength = session.headers["content-length"]?.toIntOrNull() ?: 0
+                    val body = if (contentLength > 0) {
+                        val buffer = ByteArray(contentLength)
+                        var totalRead = 0
+                        while (totalRead < contentLength) {
+                            val read = session.inputStream.read(buffer, totalRead, contentLength - totalRead)
+                            if (read == -1) break
+                            totalRead += read
+                        }
+                        String(buffer, 0, totalRead, StandardCharsets.UTF_8)
+                    } else {
+                        val files = HashMap<String, String>()
+                        session.parseBody(files)
+                        files["postData"] ?: ""
+                    }
+
                     val ok = ConfigManager.saveRawJson(context, body)
                     if (ok) {
                         onConfigUpdated()
-                        newFixedLengthResponse(Response.Status.OK, "application/json", "{\"status\":\"ok\"}")
+                        newFixedLengthResponse(Response.Status.OK, "application/json; charset=utf-8", "{\"status\":\"ok\"}")
                     } else {
-                        newFixedLengthResponse(Response.Status.BAD_REQUEST, "application/json", "{\"status\":\"invalid_json\"}")
+                        newFixedLengthResponse(Response.Status.BAD_REQUEST, "application/json; charset=utf-8", "{\"status\":\"invalid_json\"}")
                     }
                 } catch (e: Exception) {
-                    newFixedLengthResponse(Response.Status.INTERNAL_ERROR, "application/json", "{\"status\":\"error\"}")
+                    newFixedLengthResponse(Response.Status.INTERNAL_ERROR, "application/json; charset=utf-8", "{\"status\":\"error\"}")
                 }
             }
             else -> {
                 val html = try {
-                    context.assets.open("index.html").bufferedReader().use { it.readText() }
+                    context.assets.open("index.html").bufferedReader(StandardCharsets.UTF_8).use { it.readText() }
                 } catch (e: Exception) {
                     "<h1>Lỗi không tìm thấy giao diện cấu hình</h1>"
                 }
