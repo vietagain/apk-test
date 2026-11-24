@@ -55,7 +55,7 @@ class MainActivity : AppCompatActivity() {
     private var currentConfig: AppConfig? = null
     private var latestStates: Map<String, EntityState> = emptyMap()
     private val tileViews = HashMap<String, View>()
-    private var currentAlpha: Int = 204 // 0..255
+    private var currentAlpha: Int = 204
 
     private val clockRunnable = object : Runnable {
         override fun run() {
@@ -140,7 +140,6 @@ class MainActivity : AppCompatActivity() {
         val wpFile = File(filesDir, "wallpaper.jpg")
         if (wpFile.exists()) {
             try {
-                // Giải mã giảm mẫu (inSampleSize) để tiết kiệm tối đa RAM cho máy yếu
                 val opts = BitmapFactory.Options().apply { inJustDecodeBounds = true }
                 BitmapFactory.decodeFile(wpFile.absolutePath, opts)
                 val reqWidth = resources.displayMetrics.widthPixels.coerceAtLeast(800)
@@ -150,7 +149,7 @@ class MainActivity : AppCompatActivity() {
                 }
                 val decodeOpts = BitmapFactory.Options().apply {
                     inSampleSize = sample
-                    inPreferredConfig = Bitmap.Config.RGB_565 // Tiết kiệm 50% RAM ảnh
+                    inPreferredConfig = Bitmap.Config.RGB_565
                 }
                 val bmp = BitmapFactory.decodeFile(wpFile.absolutePath, decodeOpts)
                 if (bmp != null) {
@@ -187,6 +186,7 @@ class MainActivity : AppCompatActivity() {
             val view = when (tile.type) {
                 "gate" -> createGateTileView(tile)
                 "sensor" -> createSensorTileView(tile)
+                "solar_flow" -> createSolarFlowTileView(tile)
                 else -> createSwitchTileView(tile)
             }
 
@@ -199,7 +199,8 @@ class MainActivity : AppCompatActivity() {
             }
             if (colSpan > totalCols) colSpan = totalCols
 
-            val rowSpan = if (tile.size == "large") 2 else 1
+            // Biểu đồ Solar mặc định cao gấp đôi để hiển thị rõ 3 vòng tròn
+            val rowSpan = if (tile.size == "large" || tile.type == "solar_flow") 2 else 1
 
             val params = GridLayout.LayoutParams().apply {
                 width = 0
@@ -226,6 +227,23 @@ class MainActivity : AppCompatActivity() {
             setColor(applyAlphaToHex(fillColor, currentAlpha))
             setStroke(2, applyAlphaToHex(strokeColor, borderAlpha))
         }
+    }
+
+    private fun createSolarFlowTileView(tile: TileConfig): View {
+        val box = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dpToPx(6), dpToPx(6), dpToPx(6), dpToPx(6))
+            background = makeCardBg("#334155", "#111827")
+        }
+        val flowView = SolarFlowView(this).apply {
+            tag = "flow_view"
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.MATCH_PARENT
+            )
+        }
+        box.addView(flowView)
+        return box
     }
 
     private fun createSwitchTileView(tile: TileConfig): View {
@@ -360,6 +378,13 @@ class MainActivity : AppCompatActivity() {
         return box
     }
 
+    private fun parseWatts(entityId: String): Double {
+        val st = latestStates[entityId] ?: return 0.0
+        val v = st.state.toDoubleOrNull() ?: return 0.0
+        val unit = st.attributes.optString("unit_of_measurement", "").lowercase()
+        return if (unit == "kw") v * 1000.0 else v
+    }
+
     private fun updateAllUiValues() {
         val cfg = currentConfig ?: return
 
@@ -380,6 +405,18 @@ class MainActivity : AppCompatActivity() {
 
         for (tile in cfg.tiles) {
             val view = tileViews[tile.id] ?: continue
+
+            if (tile.type == "solar_flow") {
+                val flowView = view.findViewWithTag<SolarFlowView>("flow_view") ?: continue
+                flowView.pvWatts = parseWatts(tile.pvEntity)
+                flowView.loadWatts = parseWatts(tile.loadEntity)
+                val rawBatW = parseWatts(tile.batPowerEntity)
+                flowView.batteryWatts = if (tile.invertBatPower) -rawBatW else rawBatW
+                flowView.batterySoc = formatNumber(latestStates[tile.batSocEntity]?.state)
+                flowView.invalidate()
+                continue
+            }
+
             val tvState = view.findViewWithTag<TextView>("state") ?: continue
             val stObj = latestStates[tile.entityId]
             val rawState = stObj?.state ?: "unavailable"
