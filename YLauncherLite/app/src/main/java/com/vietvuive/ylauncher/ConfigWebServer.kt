@@ -2,6 +2,8 @@ package com.vietvuive.ylauncher
 
 import android.content.Context
 import fi.iki.elonen.NanoHTTPD
+import java.io.File
+import java.io.FileOutputStream
 import java.nio.charset.StandardCharsets
 
 class ConfigWebServer(
@@ -21,22 +23,7 @@ class ConfigWebServer(
             }
             uri == "/api/config" && method == Method.POST -> {
                 try {
-                    val contentLength = session.headers["content-length"]?.toIntOrNull() ?: 0
-                    val body = if (contentLength > 0) {
-                        val buffer = ByteArray(contentLength)
-                        var totalRead = 0
-                        while (totalRead < contentLength) {
-                            val read = session.inputStream.read(buffer, totalRead, contentLength - totalRead)
-                            if (read == -1) break
-                            totalRead += read
-                        }
-                        String(buffer, 0, totalRead, StandardCharsets.UTF_8)
-                    } else {
-                        val files = HashMap<String, String>()
-                        session.parseBody(files)
-                        files["postData"] ?: ""
-                    }
-
+                    val body = readUtf8Body(session)
                     val ok = ConfigManager.saveRawJson(context, body)
                     if (ok) {
                         onConfigUpdated()
@@ -48,6 +35,33 @@ class ConfigWebServer(
                     newFixedLengthResponse(Response.Status.INTERNAL_ERROR, "application/json; charset=utf-8", "{\"status\":\"error\"}")
                 }
             }
+            uri == "/api/wallpaper" && method == Method.POST -> {
+                try {
+                    val contentLength = session.headers["content-length"]?.toIntOrNull() ?: 0
+                    val wpFile = File(context.filesDir, "wallpaper.jpg")
+                    FileOutputStream(wpFile).use { out ->
+                        val buf = ByteArray(8192)
+                        var remaining = contentLength
+                        while (remaining > 0) {
+                            val toRead = minOf(buf.size, remaining)
+                            val read = session.inputStream.read(buf, 0, toRead)
+                            if (read == -1) break
+                            out.write(buf, 0, read)
+                            remaining -= read
+                        }
+                    }
+                    onConfigUpdated()
+                    newFixedLengthResponse(Response.Status.OK, "application/json; charset=utf-8", "{\"status\":\"ok\"}")
+                } catch (e: Exception) {
+                    newFixedLengthResponse(Response.Status.INTERNAL_ERROR, "application/json; charset=utf-8", "{\"status\":\"error\"}")
+                }
+            }
+            uri == "/api/wallpaper" && method == Method.DELETE -> {
+                val wpFile = File(context.filesDir, "wallpaper.jpg")
+                if (wpFile.exists()) wpFile.delete()
+                onConfigUpdated()
+                newFixedLengthResponse(Response.Status.OK, "application/json; charset=utf-8", "{\"status\":\"deleted\"}")
+            }
             else -> {
                 val html = try {
                     context.assets.open("index.html").bufferedReader(StandardCharsets.UTF_8).use { it.readText() }
@@ -56,6 +70,24 @@ class ConfigWebServer(
                 }
                 newFixedLengthResponse(Response.Status.OK, "text/html; charset=utf-8", html)
             }
+        }
+    }
+
+    private fun readUtf8Body(session: IHTTPSession): String {
+        val contentLength = session.headers["content-length"]?.toIntOrNull() ?: 0
+        return if (contentLength > 0) {
+            val buffer = ByteArray(contentLength)
+            var totalRead = 0
+            while (totalRead < contentLength) {
+                val read = session.inputStream.read(buffer, totalRead, contentLength - totalRead)
+                if (read == -1) break
+                totalRead += read
+            }
+            String(buffer, 0, totalRead, StandardCharsets.UTF_8)
+        } else {
+            val files = HashMap<String, String>()
+            session.parseBody(files)
+            files["postData"] ?: ""
         }
     }
 }
