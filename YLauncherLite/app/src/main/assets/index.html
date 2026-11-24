@@ -3,20 +3,23 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Y Launcher Lite - Cấu hình Web</title>
+<title>Y Smart Home - Cấu hình Web</title>
 <style>
   body { font-family: system-ui, sans-serif; background: #0f172a; color: #f8fafc; margin: 0; padding: 16px; }
-  .container { max-width: 720px; margin: auto; }
+  .container { max-width: 760px; margin: auto; }
   h2 { color: #38bdf8; margin-top: 0; }
   .card { background: #1e293b; border-radius: 12px; padding: 16px; margin-bottom: 16px; border: 1px solid #334155; }
   label { display: block; font-size: 13px; color: #94a3b8; margin-bottom: 4px; margin-top: 10px; }
   input, select { width: 100%; box-sizing: border-box; padding: 10px; border-radius: 8px; border: 1px solid #475569; background: #0f172a; color: #fff; font-size: 14px; }
-  .row { display: flex; gap: 10px; }
-  .row > div { flex: 1; }
+  input[type="range"] { padding: 0; }
+  .row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+  .row > div { flex: 1; min-width: 140px; }
   button { padding: 10px 16px; border: none; border-radius: 8px; font-weight: bold; cursor: pointer; font-size: 14px; }
   .btn-save { background: #22c55e; color: #052e16; width: 100%; font-size: 16px; margin-top: 8px; }
   .btn-add { background: #38bdf8; color: #082f49; margin-top: 10px; }
-  .btn-del { background: #ef4444; color: #fff; padding: 6px 10px; font-size: 12px; }
+  .btn-sm { padding: 6px 10px; font-size: 12px; margin-left: 4px; }
+  .btn-del { background: #ef4444; color: #fff; }
+  .btn-move { background: #475569; color: #fff; }
   .tile-item { background: #0f172a; padding: 12px; border-radius: 8px; margin-top: 10px; border: 1px solid #334155; }
   .tile-header { display: flex; justify-content: space-between; align-items: center; }
   #msg { position: fixed; bottom: 16px; right: 16px; background: #22c55e; color: #000; padding: 12px 20px; border-radius: 8px; display: none; font-weight: bold; }
@@ -24,10 +27,10 @@
 </head>
 <body>
 <div class="container">
-  <h2>⚡ Y Launcher Lite - Cấu hình Home Assistant</h2>
+  <h2>⚡ Y Smart Home - Cấu hình Giao diện & Thiết bị</h2>
 
   <div class="card">
-    <h3>1. Kết nối Home Assistant & Giao diện</h3>
+    <h3>1. Kết nối Home Assistant</h3>
     <label>Địa chỉ Home Assistant (URL)</label>
     <input id="haUrl" placeholder="http://192.168.1.100:8123">
 
@@ -40,7 +43,7 @@
         <input id="refreshIntervalSec" type="number" min="1" max="60" value="3">
       </div>
       <div>
-        <label>Giao diện (Theme)</label>
+        <label>Màu nền mặc định (khi chưa đặt ảnh)</label>
         <select id="theme">
           <option value="dark">Tối (Dark)</option>
           <option value="green">Xanh lá (Green)</option>
@@ -51,7 +54,22 @@
   </div>
 
   <div class="card">
-    <h3>2. Thời tiết & Cảm biến đầu trang</h3>
+    <h3>2. Hình nền & Độ trong suốt của các ô</h3>
+    <label>Chọn ảnh nền từ điện thoại / máy tính (tự nén nhẹ cho máy yếu)</label>
+    <div class="row">
+      <div><input type="file" id="wpFile" accept="image/*"></div>
+      <div style="flex: 0 0 auto;">
+        <button class="btn-add" style="margin-top:0;" onclick="uploadWallpaper()">⬆ Tải ảnh nền</button>
+        <button class="btn-del" onclick="deleteWallpaper()">Xóa ảnh</button>
+      </div>
+    </div>
+
+    <label>Độ đậm nền các ô: <strong id="opacityVal" style="color:#38bdf8;">80%</strong> (0% = Trong suốt hoàn toàn, 100% = Đặc)</label>
+    <input type="range" id="tileOpacity" min="0" max="100" value="80" oninput="document.getElementById('opacityVal').innerText = this.value + '%'">
+  </div>
+
+  <div class="card">
+    <h3>3. Thời tiết & Cảm biến đầu trang</h3>
     <div class="row">
       <div>
         <label>Entity Thời tiết (weather.*)</label>
@@ -75,7 +93,7 @@
   </div>
 
   <div class="card">
-    <h3>3. Danh sách Thẻ điều khiển & Cảm biến lưới</h3>
+    <h3>4. Danh sách Thẻ & Kích thước ô (Kiểu Windows Phone)</h3>
     <div id="tilesList"></div>
     <button class="btn-add" onclick="addTile()">+ Thêm thẻ mới</button>
   </div>
@@ -88,13 +106,23 @@
 <script>
 let configData = { tiles: [] };
 
+function showToast(text) {
+  const m = document.getElementById('msg');
+  m.innerText = text;
+  m.style.display = 'block';
+  setTimeout(() => m.style.display = 'none', 2500);
+}
+
 async function loadConfig() {
-  const res = await fetch('/api/config');
+  const res = await fetch('/api/config?t=' + Date.now());
   configData = await res.json();
   document.getElementById('haUrl').value = configData.haUrl || '';
   document.getElementById('haToken').value = configData.haToken || '';
   document.getElementById('refreshIntervalSec').value = configData.refreshIntervalSec || 3;
   document.getElementById('theme').value = configData.theme || 'dark';
+  const op = (configData.tileOpacity !== undefined) ? configData.tileOpacity : 80;
+  document.getElementById('tileOpacity').value = op;
+  document.getElementById('opacityVal').innerText = op + '%';
   document.getElementById('weatherEntity').value = configData.weatherEntity || '';
   document.getElementById('tempEntity').value = configData.tempEntity || '';
   document.getElementById('humEntity').value = configData.humEntity || '';
@@ -106,13 +134,27 @@ function renderTiles() {
   const box = document.getElementById('tilesList');
   box.innerHTML = '';
   (configData.tiles || []).forEach((t, idx) => {
+    const sz = t.size || 'medium';
     box.innerHTML += `
       <div class="tile-item">
         <div class="tile-header">
-          <strong>Thẻ #${idx + 1}</strong>
-          <button class="btn-del" onclick="removeTile(${idx})">Xóa</button>
+          <strong>Ô #${idx + 1} - ${t.name || 'Thiết bị'}</strong>
+          <div>
+            <button class="btn-sm btn-move" onclick="moveTile(${idx}, -1)">↑</button>
+            <button class="btn-sm btn-move" onclick="moveTile(${idx}, 1)">↓</button>
+            <button class="btn-sm btn-del" onclick="removeTile(${idx})">Xóa</button>
+          </div>
         </div>
         <div class="row">
+          <div>
+            <label>Kích thước ô</label>
+            <select onchange="configData.tiles[${idx}].size = this.value">
+              <option value="small" ${sz==='small'?'selected':''}>Nhỏ (1x1 - 1 cột)</option>
+              <option value="medium" ${sz==='medium'?'selected':''}>Vừa (2x1 - 2 cột ngang)</option>
+              <option value="wide" ${sz==='wide'?'selected':''}>Rộng (4x1 - Cả hàng ngang)</option>
+              <option value="large" ${sz==='large'?'selected':''}>Lớn (2x2 - Ô vuông to)</option>
+            </select>
+          </div>
           <div>
             <label>Loại thẻ</label>
             <select onchange="configData.tiles[${idx}].type = this.value">
@@ -140,10 +182,20 @@ function renderTiles() {
   });
 }
 
+function moveTile(idx, dir) {
+  const target = idx + dir;
+  if (target < 0 || target >= configData.tiles.length) return;
+  const temp = configData.tiles[idx];
+  configData.tiles[idx] = configData.tiles[target];
+  configData.tiles[target] = temp;
+  renderTiles();
+}
+
 function addTile() {
   configData.tiles.push({
     id: 'tile_' + Date.now(),
     type: 'switch',
+    size: 'medium',
     name: 'Thiết bị mới',
     entityId: 'switch.ten_thiet_bi',
     unit: ''
@@ -156,11 +208,45 @@ function removeTile(idx) {
   renderTiles();
 }
 
+async function uploadWallpaper() {
+  const input = document.getElementById('wpFile');
+  if (!input.files || !input.files[0]) {
+    alert('Vui lòng chọn một file ảnh trước!');
+    return;
+  }
+  const file = input.files[0];
+  // Nén ảnh trên trình duyệt xuống tối đa 1280px trước khi gửi để máy yếu không bị tràn RAM
+  const img = new Image();
+  img.src = URL.createObjectURL(file);
+  img.onload = async () => {
+    const canvas = document.createElement('canvas');
+    const maxDim = 1280;
+    let w = img.width, h = img.height;
+    if (w > maxDim || h > maxDim) {
+      if (w > h) { h = Math.round(h * maxDim / w); w = maxDim; }
+      else { w = Math.round(w * maxDim / h); h = maxDim; }
+    }
+    canvas.width = w;
+    canvas.height = h;
+    canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+    canvas.toBlob(async (blob) => {
+      const res = await fetch('/api/wallpaper', { method: 'POST', body: blob });
+      if (res.ok) showToast('Đã cập nhật hình nền!');
+    }, 'image/jpeg', 0.82);
+  };
+}
+
+async function deleteWallpaper() {
+  const res = await fetch('/api/wallpaper', { method: 'DELETE' });
+  if (res.ok) showToast('Đã xóa hình nền!');
+}
+
 async function saveConfig() {
   configData.haUrl = document.getElementById('haUrl').value;
   configData.haToken = document.getElementById('haToken').value;
   configData.refreshIntervalSec = parseInt(document.getElementById('refreshIntervalSec').value) || 3;
   configData.theme = document.getElementById('theme').value;
+  configData.tileOpacity = parseInt(document.getElementById('tileOpacity').value);
   configData.weatherEntity = document.getElementById('weatherEntity').value;
   configData.tempEntity = document.getElementById('tempEntity').value;
   configData.humEntity = document.getElementById('humEntity').value;
@@ -171,11 +257,7 @@ async function saveConfig() {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(configData)
   });
-  if (res.ok) {
-    const m = document.getElementById('msg');
-    m.style.display = 'block';
-    setTimeout(() => m.style.display = 'none', 2500);
-  }
+  if (res.ok) showToast('Đã lưu cấu hình thành công!');
 }
 
 loadConfig();
