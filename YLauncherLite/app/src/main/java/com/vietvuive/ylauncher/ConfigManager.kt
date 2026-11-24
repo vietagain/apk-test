@@ -6,12 +6,17 @@ import org.json.JSONObject
 
 data class TileConfig(
     val id: String,
-    val type: String, // "switch", "gate", "sensor"
+    val type: String, // "switch", "gate", "sensor", "solar_flow"
     val size: String, // "small", "medium", "wide", "large"
     val name: String,
     val entityId: String,
     val unit: String = "",
-    val icon: String = "power"
+    val icon: String = "power",
+    val pvEntity: String = "",
+    val loadEntity: String = "",
+    val batPowerEntity: String = "",
+    val batSocEntity: String = "",
+    val invertBatPower: Boolean = false
 )
 
 data class AppConfig(
@@ -23,7 +28,7 @@ data class AppConfig(
     val humEntity: String,
     val powerEntity: String,
     val theme: String,
-    val tileOpacity: Int, // 0 -> 100 (%)
+    val tileOpacity: Int,
     val tiles: List<TileConfig>
 )
 
@@ -37,55 +42,37 @@ object ConfigManager {
             put("haToken", "")
             put("refreshIntervalSec", 3)
             put("weatherEntity", "weather.forecast_home")
-            put("tempEntity", "sensor.nhiet_do_phong")
-            put("humEntity", "sensor.do_am_phong")
-            put("powerEntity", "sensor.cong_suat_tong")
+            put("tempEntity", "")
+            put("humEntity", "")
+            put("powerEntity", "")
             put("theme", "dark")
             put("tileOpacity", 80)
             put("tiles", JSONArray().apply {
                 put(JSONObject().apply {
+                    put("id", "t_solar")
+                    put("type", "solar_flow")
+                    put("size", "large")
+                    put("name", "Luồng Điện Solar")
+                    put("entityId", "")
+                    put("pvEntity", "sensor.pv_power")
+                    put("loadEntity", "sensor.load_power")
+                    put("batPowerEntity", "sensor.battery_power")
+                    put("batSocEntity", "sensor.battery_soc")
+                    put("invertBatPower", false)
+                })
+                put(JSONObject().apply {
                     put("id", "t1")
                     put("type", "switch")
-                    put("size", "small")
+                    put("size", "medium")
                     put("name", "Đèn Khách")
                     put("entityId", "light.phong_khach")
                 })
                 put(JSONObject().apply {
                     put("id", "t2")
                     put("type", "switch")
-                    put("size", "small")
+                    put("size", "medium")
                     put("name", "Quạt Trần")
                     put("entityId", "fan.quat_tran")
-                })
-                put(JSONObject().apply {
-                    put("id", "t3")
-                    put("type", "sensor")
-                    put("size", "large")
-                    put("name", "Pin Solar")
-                    put("entityId", "sensor.battery_soc")
-                    put("unit", "%")
-                })
-                put(JSONObject().apply {
-                    put("id", "t4")
-                    put("type", "switch")
-                    put("size", "medium")
-                    put("name", "Điều Hòa")
-                    put("entityId", "climate.dieu_hoa")
-                })
-                put(JSONObject().apply {
-                    put("id", "t5")
-                    put("type", "sensor")
-                    put("size", "medium")
-                    put("name", "Công Suất PV")
-                    put("entityId", "sensor.pv_power")
-                    put("unit", "W")
-                })
-                put(JSONObject().apply {
-                    put("id", "t6")
-                    put("type", "gate")
-                    put("size", "wide")
-                    put("name", "Cổng Chính")
-                    put("entityId", "cover.cong_chinh")
                 })
             })
         }.toString(2)
@@ -128,7 +115,12 @@ object ConfigManager {
                     name = item.optString("name", "Thiết bị"),
                     entityId = item.optString("entityId", ""),
                     unit = item.optString("unit", ""),
-                    icon = item.optString("icon", "power")
+                    icon = item.optString("icon", "power"),
+                    pvEntity = item.optString("pvEntity", ""),
+                    loadEntity = item.optString("loadEntity", ""),
+                    batPowerEntity = item.optString("batPowerEntity", ""),
+                    batSocEntity = item.optString("batSocEntity", ""),
+                    invertBatPower = item.optBoolean("invertBatPower", false)
                 )
             )
         }
