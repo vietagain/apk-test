@@ -7,7 +7,7 @@ import org.json.JSONObject
 data class TileConfig(
     val id: String,
     val type: String, // "switch", "gate", "sensor"
-    val size: String, // "small" (1x1), "medium" (2x1), "wide" (4x1), "large" (2x2)
+    val size: String, // "small", "medium", "wide", "large"
     val name: String,
     val entityId: String,
     val unit: String = "",
@@ -23,6 +23,7 @@ data class AppConfig(
     val humEntity: String,
     val powerEntity: String,
     val theme: String,
+    val tileOpacity: Int, // 0 -> 100 (%)
     val tiles: List<TileConfig>
 )
 
@@ -40,6 +41,7 @@ object ConfigManager {
             put("humEntity", "sensor.do_am_phong")
             put("powerEntity", "sensor.cong_suat_tong")
             put("theme", "dark")
+            put("tileOpacity", 80)
             put("tiles", JSONArray().apply {
                 put(JSONObject().apply {
                     put("id", "t1")
@@ -140,6 +142,7 @@ object ConfigManager {
             humEntity = obj.optString("humEntity", ""),
             powerEntity = obj.optString("powerEntity", ""),
             theme = obj.optString("theme", "dark"),
+            tileOpacity = obj.optInt("tileOpacity", 80).coerceIn(0, 100),
             tiles = list
         )
     }
