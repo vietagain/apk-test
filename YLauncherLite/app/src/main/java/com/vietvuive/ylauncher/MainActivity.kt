@@ -2,7 +2,10 @@ package com.vietvuive.ylauncher
 
 import android.content.Context
 import android.content.Intent
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.graphics.Color
+import android.graphics.drawable.BitmapDrawable
 import android.graphics.drawable.GradientDrawable
 import android.net.wifi.WifiManager
 import android.os.Bundle
@@ -20,6 +23,7 @@ import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
+import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -32,6 +36,7 @@ class MainActivity : AppCompatActivity() {
     private var webServer: ConfigWebServer? = null
 
     private lateinit var rootLayout: LinearLayout
+    private lateinit var headerCard: LinearLayout
     private lateinit var tvTime: TextView
     private lateinit var tvDateSolar: TextView
     private lateinit var tvDateLunar: TextView
@@ -50,6 +55,7 @@ class MainActivity : AppCompatActivity() {
     private var currentConfig: AppConfig? = null
     private var latestStates: Map<String, EntityState> = emptyMap()
     private val tileViews = HashMap<String, View>()
+    private var currentAlpha: Int = 204 // 0..255
 
     private val clockRunnable = object : Runnable {
         override fun run() {
@@ -90,6 +96,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun bindViews() {
         rootLayout = findViewById(R.id.root_layout)
+        headerCard = findViewById(R.id.header_card)
         tvTime = findViewById(R.id.tv_time)
         tvDateSolar = findViewById(R.id.tv_date_solar)
         tvDateLunar = findViewById(R.id.tv_date_lunar)
@@ -122,12 +129,38 @@ class MainActivity : AppCompatActivity() {
     private fun reloadConfigAndBuildTiles() {
         val cfg = ConfigManager.loadConfig(this)
         currentConfig = cfg
-        applyTheme(cfg.theme)
+        currentAlpha = (cfg.tileOpacity * 255 / 100).coerceIn(0, 255)
+        applyWallpaperAndTheme(cfg.theme)
+        headerCard.background = makeCardBg("#263241", "#17202A")
         buildGridTiles(cfg)
         updateAllUiValues()
     }
 
-    private fun applyTheme(theme: String) {
+    private fun applyWallpaperAndTheme(theme: String) {
+        val wpFile = File(filesDir, "wallpaper.jpg")
+        if (wpFile.exists()) {
+            try {
+                // Giải mã giảm mẫu (inSampleSize) để tiết kiệm tối đa RAM cho máy yếu
+                val opts = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+                BitmapFactory.decodeFile(wpFile.absolutePath, opts)
+                val reqWidth = resources.displayMetrics.widthPixels.coerceAtLeast(800)
+                var sample = 1
+                while (opts.outWidth / sample > reqWidth) {
+                    sample *= 2
+                }
+                val decodeOpts = BitmapFactory.Options().apply {
+                    inSampleSize = sample
+                    inPreferredConfig = Bitmap.Config.RGB_565 // Tiết kiệm 50% RAM ảnh
+                }
+                val bmp = BitmapFactory.decodeFile(wpFile.absolutePath, decodeOpts)
+                if (bmp != null) {
+                    rootLayout.background = BitmapDrawable(resources, bmp)
+                    return
+                }
+            } catch (_: Exception) {
+            }
+        }
+
         val bgColor = when (theme) {
             "green" -> Color.parseColor("#0B1914")
             "scifi" -> Color.parseColor("#090D16")
@@ -144,7 +177,6 @@ class MainActivity : AppCompatActivity() {
         gridTiles.removeAllViews()
         tileViews.clear()
 
-        // Hệ lưới chuẩn 4 cột trên màn hình ngang/tablet, 2 cột trên màn hình dọc hẹp
         val totalCols = if (resources.configuration.screenWidthDp >= 520) 4 else 2
         gridTiles.columnCount = totalCols
 
@@ -158,7 +190,6 @@ class MainActivity : AppCompatActivity() {
                 else -> createSwitchTileView(tile)
             }
 
-            // Tính toán số cột (colSpan) và số hàng (rowSpan) theo kiểu Windows Phone
             var colSpan = when (tile.size) {
                 "small" -> 1
                 "medium" -> 2
@@ -182,12 +213,18 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    private fun applyAlphaToHex(hexColor: String, alpha: Int): Int {
+        val base = Color.parseColor(hexColor)
+        return Color.argb(alpha, Color.red(base), Color.green(base), Color.blue(base))
+    }
+
     private fun makeCardBg(strokeColor: String = "#263241", fillColor: String = "#17202A"): GradientDrawable {
+        val borderAlpha = (currentAlpha + 50).coerceIn(40, 255)
         return GradientDrawable().apply {
             shape = GradientDrawable.RECTANGLE
             cornerRadius = 16f
-            setColor(Color.parseColor(fillColor))
-            setStroke(2, Color.parseColor(strokeColor))
+            setColor(applyAlphaToHex(fillColor, currentAlpha))
+            setStroke(2, applyAlphaToHex(strokeColor, borderAlpha))
         }
     }
 
@@ -203,13 +240,15 @@ class MainActivity : AppCompatActivity() {
             text = tile.name
             textSize = if (isLarge) 19f else 15f
             setTextColor(Color.WHITE)
+            setShadowLayer(3f, 1f, 1f, Color.BLACK)
             maxLines = 2
         }
         val tvState = TextView(this).apply {
             tag = "state"
             text = "Đang tải..."
             textSize = if (isLarge) 16f else 12f
-            setTextColor(Color.parseColor("#94A3B8"))
+            setTextColor(Color.parseColor("#CBD5E1"))
+            setShadowLayer(2f, 1f, 1f, Color.BLACK)
             setPadding(0, dpToPx(4), 0, 0)
         }
         box.addView(tvTitle)
@@ -246,7 +285,8 @@ class MainActivity : AppCompatActivity() {
         val tvTitle = TextView(this).apply {
             text = tile.name
             textSize = if (isLarge) 18f else 14f
-            setTextColor(Color.parseColor("#CBD5E1"))
+            setTextColor(Color.parseColor("#E2E8F0"))
+            setShadowLayer(3f, 1f, 1f, Color.BLACK)
             maxLines = 1
         }
         val tvVal = TextView(this).apply {
@@ -254,6 +294,7 @@ class MainActivity : AppCompatActivity() {
             text = "-- ${tile.unit}"
             textSize = if (isLarge) 32f else 19f
             setTextColor(Color.parseColor("#38BDF8"))
+            setShadowLayer(3f, 1f, 1f, Color.BLACK)
             setPadding(0, dpToPx(4), 0, 0)
         }
         box.addView(tvTitle)
@@ -275,6 +316,7 @@ class MainActivity : AppCompatActivity() {
             text = tile.name
             textSize = 14f
             setTextColor(Color.WHITE)
+            setShadowLayer(3f, 1f, 1f, Color.BLACK)
             layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
         }
         val tvState = TextView(this).apply {
@@ -282,6 +324,7 @@ class MainActivity : AppCompatActivity() {
             text = "--"
             textSize = 12f
             setTextColor(Color.parseColor("#C084FC"))
+            setShadowLayer(2f, 1f, 1f, Color.BLACK)
         }
         header.addView(tvTitle)
         header.addView(tvState)
@@ -360,7 +403,7 @@ class MainActivity : AppCompatActivity() {
                 else -> {
                     val isOn = rawState == "on" || rawState == "heat" || rawState == "cool" || rawState == "auto"
                     tvState.text = if (isOn) "BẬT ($rawState)" else "TẮT"
-                    tvState.setTextColor(if (isOn) Color.parseColor("#4ADE80") else Color.parseColor("#94A3B8"))
+                    tvState.setTextColor(if (isOn) Color.parseColor("#4ADE80") else Color.parseColor("#CBD5E1"))
                     view.background = if (isOn) makeCardBg("#22C55E", "#132A1E") else makeCardBg()
                 }
             }
