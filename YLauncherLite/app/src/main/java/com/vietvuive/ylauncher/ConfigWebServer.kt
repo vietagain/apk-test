@@ -2,6 +2,8 @@ package com.vietvuive.ylauncher
 
 import android.content.Context
 import fi.iki.elonen.NanoHTTPD
+import org.json.JSONArray
+import org.json.JSONObject
 import java.io.File
 import java.io.FileOutputStream
 import java.nio.charset.StandardCharsets
@@ -33,6 +35,30 @@ class ConfigWebServer(
                     }
                 } catch (e: Exception) {
                     newFixedLengthResponse(Response.Status.INTERNAL_ERROR, "application/json; charset=utf-8", "{\"status\":\"error\"}")
+                }
+            }
+            uri == "/api/ha_entities" && method == Method.GET -> {
+                try {
+                    val cfg = ConfigManager.loadConfig(context)
+                    val states = HaClient.fetchAllStates(cfg.haUrl, cfg.haToken)
+                    if (states == null) {
+                        newFixedLengthResponse(Response.Status.BAD_GATEWAY, "application/json; charset=utf-8", "{\"error\":\"Không kết nối được HA. Hãy kiểm tra URL/Token và bấm Lưu trước.\"}")
+                    } else {
+                        val arr = JSONArray()
+                        for (st in states.values.sortedBy { it.entityId }) {
+                            val friendly = st.attributes.optString("friendly_name", st.entityId)
+                            val unit = st.attributes.optString("unit_of_measurement", "")
+                            arr.put(JSONObject().apply {
+                                put("id", st.entityId)
+                                put("name", friendly)
+                                put("state", st.state)
+                                put("unit", unit)
+                            })
+                        }
+                        newFixedLengthResponse(Response.Status.OK, "application/json; charset=utf-8", arr.toString())
+                    }
+                } catch (e: Exception) {
+                    newFixedLengthResponse(Response.Status.INTERNAL_ERROR, "application/json; charset=utf-8", "{\"error\":\"Lỗi lấy danh sách từ HA\"}")
                 }
             }
             uri == "/api/wallpaper" && method == Method.POST -> {
