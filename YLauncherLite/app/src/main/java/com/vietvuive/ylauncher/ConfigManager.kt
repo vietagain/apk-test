@@ -7,6 +7,7 @@ import org.json.JSONObject
 data class TileConfig(
     val id: String,
     val type: String, // "switch", "gate", "sensor"
+    val size: String, // "small" (1x1), "medium" (2x1), "wide" (4x1), "large" (2x2)
     val name: String,
     val entityId: String,
     val unit: String = "",
@@ -43,46 +44,46 @@ object ConfigManager {
                 put(JSONObject().apply {
                     put("id", "t1")
                     put("type", "switch")
-                    put("name", "Đèn Phòng Khách")
+                    put("size", "small")
+                    put("name", "Đèn Khách")
                     put("entityId", "light.phong_khach")
-                    put("icon", "light")
                 })
                 put(JSONObject().apply {
                     put("id", "t2")
                     put("type", "switch")
+                    put("size", "small")
                     put("name", "Quạt Trần")
                     put("entityId", "fan.quat_tran")
-                    put("icon", "fan")
                 })
                 put(JSONObject().apply {
                     put("id", "t3")
-                    put("type", "switch")
-                    put("name", "Điều Hòa")
-                    put("entityId", "climate.dieu_hoa")
-                    put("icon", "ac")
+                    put("type", "sensor")
+                    put("size", "large")
+                    put("name", "Pin Solar")
+                    put("entityId", "sensor.battery_soc")
+                    put("unit", "%")
                 })
                 put(JSONObject().apply {
                     put("id", "t4")
-                    put("type", "gate")
-                    put("name", "Cổng Chính")
-                    put("entityId", "cover.cong_chinh")
-                    put("icon", "gate")
+                    put("type", "switch")
+                    put("size", "medium")
+                    put("name", "Điều Hòa")
+                    put("entityId", "climate.dieu_hoa")
                 })
                 put(JSONObject().apply {
                     put("id", "t5")
                     put("type", "sensor")
-                    put("name", "Pin Solar")
-                    put("entityId", "sensor.battery_soc")
-                    put("unit", "%")
-                    put("icon", "battery")
-                })
-                put(JSONObject().apply {
-                    put("id", "t6")
-                    put("type", "sensor")
+                    put("size", "medium")
                     put("name", "Công Suất PV")
                     put("entityId", "sensor.pv_power")
                     put("unit", "W")
-                    put("icon", "solar")
+                })
+                put(JSONObject().apply {
+                    put("id", "t6")
+                    put("type", "gate")
+                    put("size", "wide")
+                    put("name", "Cổng Chính")
+                    put("entityId", "cover.cong_chinh")
                 })
             })
         }.toString(2)
@@ -121,6 +122,7 @@ object ConfigManager {
                 TileConfig(
                     id = item.optString("id", "tile_$i"),
                     type = item.optString("type", "switch"),
+                    size = item.optString("size", "medium"),
                     name = item.optString("name", "Thiết bị"),
                     entityId = item.optString("entityId", ""),
                     unit = item.optString("unit", ""),
