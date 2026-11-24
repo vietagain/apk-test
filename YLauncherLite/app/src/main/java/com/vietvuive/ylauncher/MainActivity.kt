@@ -115,7 +115,7 @@ class MainActivity : AppCompatActivity() {
 
         findViewById<Button>(R.id.btn_key_map).setOnClickListener {
             startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
-            Toast.makeText(this, "Bật mục 'Y Launcher - Giữ Tăng Âm Lượng'", Toast.LENGTH_LONG).show()
+            Toast.makeText(this, "Bật mục 'Y Smart Home - Giữ Tăng Âm Lượng'", Toast.LENGTH_LONG).show()
         }
     }
 
@@ -136,12 +136,20 @@ class MainActivity : AppCompatActivity() {
         rootLayout.setBackgroundColor(bgColor)
     }
 
+    private fun dpToPx(dp: Int): Int {
+        return (dp * resources.displayMetrics.density).toInt()
+    }
+
     private fun buildGridTiles(cfg: AppConfig) {
         gridTiles.removeAllViews()
         tileViews.clear()
 
-        val colCount = if (resources.configuration.screenWidthDp >= 600) 4 else 2
-        gridTiles.columnCount = colCount
+        // Hệ lưới chuẩn 4 cột trên màn hình ngang/tablet, 2 cột trên màn hình dọc hẹp
+        val totalCols = if (resources.configuration.screenWidthDp >= 520) 4 else 2
+        gridTiles.columnCount = totalCols
+
+        val baseRowHeight = dpToPx(84)
+        val marginPx = dpToPx(5)
 
         for (tile in cfg.tiles) {
             val view = when (tile.type) {
@@ -149,11 +157,25 @@ class MainActivity : AppCompatActivity() {
                 "sensor" -> createSensorTileView(tile)
                 else -> createSwitchTileView(tile)
             }
+
+            // Tính toán số cột (colSpan) và số hàng (rowSpan) theo kiểu Windows Phone
+            var colSpan = when (tile.size) {
+                "small" -> 1
+                "medium" -> 2
+                "large" -> 2
+                "wide" -> totalCols
+                else -> 2
+            }
+            if (colSpan > totalCols) colSpan = totalCols
+
+            val rowSpan = if (tile.size == "large") 2 else 1
+
             val params = GridLayout.LayoutParams().apply {
                 width = 0
-                height = GridLayout.LayoutParams.WRAP_CONTENT
-                columnSpec = GridLayout.spec(GridLayout.UNDEFINED, 1f)
-                setMargins(8, 8, 8, 8)
+                height = if (rowSpan == 2) (baseRowHeight * 2 + marginPx * 2) else baseRowHeight
+                columnSpec = GridLayout.spec(GridLayout.UNDEFINED, colSpan, colSpan.toFloat())
+                rowSpec = GridLayout.spec(GridLayout.UNDEFINED, rowSpan)
+                setMargins(marginPx, marginPx, marginPx, marginPx)
             }
             gridTiles.addView(view, params)
             tileViews[tile.id] = view
@@ -163,37 +185,39 @@ class MainActivity : AppCompatActivity() {
     private fun makeCardBg(strokeColor: String = "#263241", fillColor: String = "#17202A"): GradientDrawable {
         return GradientDrawable().apply {
             shape = GradientDrawable.RECTANGLE
-            cornerRadius = 20f
+            cornerRadius = 16f
             setColor(Color.parseColor(fillColor))
             setStroke(2, Color.parseColor(strokeColor))
         }
     }
 
     private fun createSwitchTileView(tile: TileConfig): View {
+        val isLarge = tile.size == "large"
         val box = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(24, 20, 24, 20)
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(dpToPx(14), dpToPx(10), dpToPx(14), dpToPx(10))
             background = makeCardBg()
         }
         val tvTitle = TextView(this).apply {
             text = tile.name
-            textSize = 16f
+            textSize = if (isLarge) 19f else 15f
             setTextColor(Color.WHITE)
-            maxLines = 1
+            maxLines = 2
         }
         val tvState = TextView(this).apply {
             tag = "state"
             text = "Đang tải..."
-            textSize = 13f
+            textSize = if (isLarge) 16f else 12f
             setTextColor(Color.parseColor("#94A3B8"))
-            setPadding(0, 8, 0, 0)
+            setPadding(0, dpToPx(4), 0, 0)
         }
         box.addView(tvTitle)
         box.addView(tvState)
 
         box.setOnClickListener {
             val cfg = currentConfig ?: return@setOnClickListener
-            tvState.text = "Đang gửi lệnh..."
+            tvState.text = "Đang gửi..."
             ioExecutor.execute {
                 val ok = HaClient.callService(cfg.haUrl, cfg.haToken, tile.entityId, "toggle")
                 if (ok) {
@@ -212,23 +236,25 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun createSensorTileView(tile: TileConfig): View {
+        val isLarge = tile.size == "large"
         val box = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(24, 20, 24, 20)
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(dpToPx(14), dpToPx(10), dpToPx(14), dpToPx(10))
             background = makeCardBg("#1E3A5F", "#122338")
         }
         val tvTitle = TextView(this).apply {
             text = tile.name
-            textSize = 15f
+            textSize = if (isLarge) 18f else 14f
             setTextColor(Color.parseColor("#CBD5E1"))
             maxLines = 1
         }
         val tvVal = TextView(this).apply {
             tag = "state"
             text = "-- ${tile.unit}"
-            textSize = 20f
+            textSize = if (isLarge) 32f else 19f
             setTextColor(Color.parseColor("#38BDF8"))
-            setPadding(0, 6, 0, 0)
+            setPadding(0, dpToPx(4), 0, 0)
         }
         box.addView(tvTitle)
         box.addView(tvVal)
@@ -238,7 +264,8 @@ class MainActivity : AppCompatActivity() {
     private fun createGateTileView(tile: TileConfig): View {
         val box = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(20, 16, 20, 16)
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(dpToPx(14), dpToPx(8), dpToPx(14), dpToPx(8))
             background = makeCardBg("#3B2F4A", "#1E1926")
         }
         val header = LinearLayout(this).apply {
@@ -246,14 +273,14 @@ class MainActivity : AppCompatActivity() {
         }
         val tvTitle = TextView(this).apply {
             text = tile.name
-            textSize = 15f
+            textSize = 14f
             setTextColor(Color.WHITE)
             layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
         }
         val tvState = TextView(this).apply {
             tag = "state"
             text = "--"
-            textSize = 13f
+            textSize = 12f
             setTextColor(Color.parseColor("#C084FC"))
         }
         header.addView(tvTitle)
@@ -263,16 +290,17 @@ class MainActivity : AppCompatActivity() {
         val btnRow = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER
-            setPadding(0, 12, 0, 0)
+            setPadding(0, dpToPx(6), 0, 0)
         }
         val actions = listOf("Mở" to "open", "Dừng" to "stop", "Đóng" to "close")
         for ((label, cmd) in actions) {
             val btn = Button(this).apply {
                 text = label
-                textSize = 12f
+                textSize = 11f
+                setPadding(0, 0, 0, 0)
                 setTextColor(Color.WHITE)
                 background = makeCardBg("#475569", "#334155")
-                layoutParams = LinearLayout.LayoutParams(0, 76, 1f).apply {
+                layoutParams = LinearLayout.LayoutParams(0, dpToPx(32), 1f).apply {
                     setMargins(4, 0, 4, 0)
                 }
                 setOnClickListener {
