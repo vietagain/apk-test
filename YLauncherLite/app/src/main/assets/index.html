@@ -12,6 +12,7 @@
   label { display: block; font-size: 13px; color: #94a3b8; margin-bottom: 4px; margin-top: 10px; }
   input, select { width: 100%; box-sizing: border-box; padding: 10px; border-radius: 8px; border: 1px solid #475569; background: #0f172a; color: #fff; font-size: 14px; }
   input[type="range"] { padding: 0; }
+  input[type="checkbox"] { width: auto; transform: scale(1.2); margin-right: 6px; }
   .row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
   .row > div { flex: 1; min-width: 140px; }
   button { padding: 10px 16px; border: none; border-radius: 8px; font-weight: bold; cursor: pointer; font-size: 14px; }
@@ -30,7 +31,6 @@
 <div class="container">
   <h2>⚡ Y Smart Home - Cấu hình <span id="haStatusBadge">Đang tải danh sách HA...</span></h2>
 
-  <!-- Danh sách gợi ý tự động từ Home Assistant -->
   <datalist id="ha-all-entities"></datalist>
   <datalist id="ha-weather-entities"></datalist>
   <datalist id="ha-sensor-entities"></datalist>
@@ -78,7 +78,7 @@
   </div>
 
   <div class="card">
-    <h3>3. Thời tiết & Cảm biến đầu trang (Bấm vào ô để chọn)</h3>
+    <h3>3. Thời tiết & Cảm biến đầu trang</h3>
     <div class="row">
       <div>
         <label>Entity Thời tiết (weather.*)</label>
@@ -102,7 +102,7 @@
   </div>
 
   <div class="card">
-    <h3>4. Danh sách Thẻ & Kích thước ô (Bấm vào Entity ID để chọn nhanh)</h3>
+    <h3>4. Danh sách Thẻ & Kích thước ô</h3>
     <div id="tilesList"></div>
     <button class="btn-add" onclick="addTile()">+ Thêm thẻ mới</button>
   </div>
@@ -144,9 +144,7 @@ async function loadConfig() {
 async function syncHaEntities(saveFirst) {
   const badge = document.getElementById('haStatusBadge');
   badge.innerText = 'Đang lấy danh sách HA...';
-  if (saveFirst) {
-    await saveConfig(false);
-  }
+  if (saveFirst) await saveConfig(false);
   try {
     const res = await fetch('/api/ha_entities?t=' + Date.now());
     const data = await res.json();
@@ -169,12 +167,8 @@ async function syncHaEntities(saveFirst) {
       const label = `${item.name} (${item.state}${item.unit ? ' ' + item.unit : ''})`;
       const optHtml = `<option value="${item.id}">${label}</option>`;
       allList.insertAdjacentHTML('beforeend', optHtml);
-      if (item.id.startsWith('weather.')) {
-        weatherList.insertAdjacentHTML('beforeend', optHtml);
-      }
-      if (item.id.startsWith('sensor.')) {
-        sensorList.insertAdjacentHTML('beforeend', optHtml);
-      }
+      if (item.id.startsWith('weather.')) weatherList.insertAdjacentHTML('beforeend', optHtml);
+      if (item.id.startsWith('sensor.')) sensorList.insertAdjacentHTML('beforeend', optHtml);
     });
 
     badge.innerText = `✓ Đã nạp ${data.length} thiết bị HA`;
@@ -189,18 +183,23 @@ function onEntitySelected(idx, val) {
   configData.tiles[idx].entityId = val;
   const info = haEntitiesMap[val];
   if (info) {
-    // Tự động điền luôn Tên hiển thị, Loại thẻ và Đơn vị từ Home Assistant!
     configData.tiles[idx].name = info.name;
-    if (val.startsWith('cover.')) {
-      configData.tiles[idx].type = 'gate';
-    } else if (val.startsWith('sensor.') || val.startsWith('binary_sensor.')) {
+    if (val.startsWith('cover.')) configData.tiles[idx].type = 'gate';
+    else if (val.startsWith('sensor.') || val.startsWith('binary_sensor.')) {
       configData.tiles[idx].type = 'sensor';
       if (info.unit) configData.tiles[idx].unit = info.unit;
-    } else {
-      configData.tiles[idx].type = 'switch';
-    }
+    } else configData.tiles[idx].type = 'switch';
     renderTiles();
   }
+}
+
+function onTypeChanged(idx, newType) {
+  configData.tiles[idx].type = newType;
+  if (newType === 'solar_flow') {
+    configData.tiles[idx].size = 'large';
+    configData.tiles[idx].name = 'Luồng Điện Solar';
+  }
+  renderTiles();
 }
 
 function renderTiles() {
@@ -208,6 +207,55 @@ function renderTiles() {
   box.innerHTML = '';
   (configData.tiles || []).forEach((t, idx) => {
     const sz = t.size || 'medium';
+    const isSolar = t.type === 'solar_flow';
+
+    let fieldsHtml = '';
+    if (isSolar) {
+      fieldsHtml = `
+        <div class="row">
+          <div>
+            <label>Cảm biến Công suất PV (W/kW)</label>
+            <input value="${t.pvEntity || ''}" list="ha-sensor-entities" placeholder="sensor.pv_power..." onchange="configData.tiles[${idx}].pvEntity = this.value">
+          </div>
+          <div>
+            <label>Cảm biến Công suất Tải Nhà (W/kW)</label>
+            <input value="${t.loadEntity || ''}" list="ha-sensor-entities" placeholder="sensor.load_power..." onchange="configData.tiles[${idx}].loadEntity = this.value">
+          </div>
+        </div>
+        <div class="row">
+          <div>
+            <label>Cảm biến Công suất Pin (W/kW)</label>
+            <input value="${t.batPowerEntity || ''}" list="ha-sensor-entities" placeholder="sensor.battery_power..." onchange="configData.tiles[${idx}].batPowerEntity = this.value">
+          </div>
+          <div>
+            <label>Cảm biến % Pin (SoC)</label>
+            <input value="${t.batSocEntity || ''}" list="ha-sensor-entities" placeholder="sensor.battery_soc..." onchange="configData.tiles[${idx}].batSocEntity = this.value">
+          </div>
+        </div>
+        <label style="margin-top:8px; color:#cbd5e1;">
+          <input type="checkbox" ${t.invertBatPower ? 'checked' : ''} onchange="configData.tiles[${idx}].invertBatPower = this.checked">
+          Đảo chiều công suất Pin (tích nếu số Dương là Đang xả, số Âm là Đang sạc)
+        </label>
+      `;
+    } else {
+      fieldsHtml = `
+        <div class="row">
+          <div>
+            <label>Entity ID (Bấm hoặc gõ tên để chọn)</label>
+            <input value="${t.entityId || ''}" list="ha-all-entities" placeholder="Bấm để chọn thiết bị HA..." onchange="onEntitySelected(${idx}, this.value)">
+          </div>
+          <div>
+            <label>Tên hiển thị</label>
+            <input value="${t.name || ''}" onchange="configData.tiles[${idx}].name = this.value">
+          </div>
+          <div>
+            <label>Đơn vị (nếu là cảm biến)</label>
+            <input value="${t.unit || ''}" placeholder="W, V, %, °C..." onchange="configData.tiles[${idx}].unit = this.value">
+          </div>
+        </div>
+      `;
+    }
+
     box.innerHTML += `
       <div class="tile-item">
         <div class="tile-header">
@@ -220,15 +268,14 @@ function renderTiles() {
         </div>
         <div class="row">
           <div>
-            <label>Entity ID (Bấm hoặc gõ tên để chọn)</label>
-            <input value="${t.entityId || ''}" list="ha-all-entities" placeholder="Bấm để chọn thiết bị HA..." onchange="onEntitySelected(${idx}, this.value)">
+            <label>Loại thẻ</label>
+            <select onchange="onTypeChanged(${idx}, this.value)">
+              <option value="switch" ${t.type==='switch'?'selected':''}>Công tắc / Đèn / Quạt</option>
+              <option value="gate" ${t.type==='gate'?'selected':''}>Cổng / Cửa cuốn (Mở-Dừng-Đóng)</option>
+              <option value="sensor" ${t.type==='sensor'?'selected':''}>Cảm biến hiển thị số</option>
+              <option value="solar_flow" ${t.type==='solar_flow'?'selected':''}>☀ Biểu đồ luồng điện Solar (Chuyển động)</option>
+            </select>
           </div>
-          <div>
-            <label>Tên hiển thị</label>
-            <input value="${t.name || ''}" onchange="configData.tiles[${idx}].name = this.value">
-          </div>
-        </div>
-        <div class="row">
           <div>
             <label>Kích thước ô</label>
             <select onchange="configData.tiles[${idx}].size = this.value">
@@ -238,19 +285,8 @@ function renderTiles() {
               <option value="large" ${sz==='large'?'selected':''}>Lớn (2x2 - Ô vuông to)</option>
             </select>
           </div>
-          <div>
-            <label>Loại thẻ</label>
-            <select onchange="configData.tiles[${idx}].type = this.value">
-              <option value="switch" ${t.type==='switch'?'selected':''}>Công tắc / Đèn / Quạt</option>
-              <option value="gate" ${t.type==='gate'?'selected':''}>Cổng / Cửa cuốn (Mở-Dừng-Đóng)</option>
-              <option value="sensor" ${t.type==='sensor'?'selected':''}>Cảm biến hiển thị số</option>
-            </select>
-          </div>
-          <div>
-            <label>Đơn vị (nếu là cảm biến)</label>
-            <input value="${t.unit || ''}" placeholder="W, V, %, °C..." onchange="configData.tiles[${idx}].unit = this.value">
-          </div>
         </div>
+        ${fieldsHtml}
       </div>`;
   });
 }
@@ -329,9 +365,7 @@ async function saveConfig(notify) {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(configData)
   });
-  if (res.ok && notify) {
-    showToast('Đã lưu cấu hình thành công!');
-  }
+  if (res.ok && notify) showToast('Đã lưu cấu hình thành công!');
 }
 
 loadConfig();
