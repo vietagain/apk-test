@@ -42,7 +42,7 @@ class ConfigWebServer(
                     val cfg = ConfigManager.loadConfig(context)
                     val states = HaClient.fetchAllStates(cfg.haUrl, cfg.haToken)
                     if (states == null) {
-                        newFixedLengthResponse(Response.Status.BAD_GATEWAY, "application/json; charset=utf-8", "{\"error\":\"Không kết nối được HA. Hãy kiểm tra URL/Token và bấm Lưu trước.\"}")
+                        newFixedLengthResponse(Response.Status.INTERNAL_ERROR, "application/json; charset=utf-8", "{\"error\":\"Không kết nối được HA. Hãy kiểm tra URL/Token và bấm Lưu trước.\"}")
                     } else {
                         val arr = JSONArray()
                         for (st in states.values.sortedBy { it.entityId }) {
