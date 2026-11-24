@@ -22,15 +22,24 @@
   .btn-move { background: #475569; color: #fff; }
   .tile-item { background: #0f172a; padding: 12px; border-radius: 8px; margin-top: 10px; border: 1px solid #334155; }
   .tile-header { display: flex; justify-content: space-between; align-items: center; }
-  #msg { position: fixed; bottom: 16px; right: 16px; background: #22c55e; color: #000; padding: 12px 20px; border-radius: 8px; display: none; font-weight: bold; }
+  #msg { position: fixed; bottom: 16px; right: 16px; background: #22c55e; color: #000; padding: 12px 20px; border-radius: 8px; display: none; font-weight: bold; z-index: 99; }
+  #haStatusBadge { display: inline-block; font-size: 12px; padding: 4px 10px; border-radius: 20px; background: #334155; color: #cbd5e1; margin-left: 8px; }
 </style>
 </head>
 <body>
 <div class="container">
-  <h2>⚡ Y Smart Home - Cấu hình Giao diện & Thiết bị</h2>
+  <h2>⚡ Y Smart Home - Cấu hình <span id="haStatusBadge">Đang tải danh sách HA...</span></h2>
+
+  <!-- Danh sách gợi ý tự động từ Home Assistant -->
+  <datalist id="ha-all-entities"></datalist>
+  <datalist id="ha-weather-entities"></datalist>
+  <datalist id="ha-sensor-entities"></datalist>
 
   <div class="card">
-    <h3>1. Kết nối Home Assistant</h3>
+    <div class="row" style="justify-content: space-between;">
+      <h3 style="margin:0;">1. Kết nối Home Assistant</h3>
+      <button class="btn-add" style="margin-top:0; padding:6px 12px; font-size:12px;" onclick="syncHaEntities(true)">🔄 Tải lại danh sách từ HA</button>
+    </div>
     <label>Địa chỉ Home Assistant (URL)</label>
     <input id="haUrl" placeholder="http://192.168.1.100:8123">
 
@@ -43,7 +52,7 @@
         <input id="refreshIntervalSec" type="number" min="1" max="60" value="3">
       </div>
       <div>
-        <label>Màu nền mặc định (khi chưa đặt ảnh)</label>
+        <label>Màu nền mặc định</label>
         <select id="theme">
           <option value="dark">Tối (Dark)</option>
           <option value="green">Xanh lá (Green)</option>
@@ -55,7 +64,7 @@
 
   <div class="card">
     <h3>2. Hình nền & Độ trong suốt của các ô</h3>
-    <label>Chọn ảnh nền từ điện thoại / máy tính (tự nén nhẹ cho máy yếu)</label>
+    <label>Chọn ảnh nền từ điện thoại / máy tính</label>
     <div class="row">
       <div><input type="file" id="wpFile" accept="image/*"></div>
       <div style="flex: 0 0 auto;">
@@ -64,47 +73,48 @@
       </div>
     </div>
 
-    <label>Độ đậm nền các ô: <strong id="opacityVal" style="color:#38bdf8;">80%</strong> (0% = Trong suốt hoàn toàn, 100% = Đặc)</label>
+    <label>Độ đậm nền các ô: <strong id="opacityVal" style="color:#38bdf8;">80%</strong></label>
     <input type="range" id="tileOpacity" min="0" max="100" value="80" oninput="document.getElementById('opacityVal').innerText = this.value + '%'">
   </div>
 
   <div class="card">
-    <h3>3. Thời tiết & Cảm biến đầu trang</h3>
+    <h3>3. Thời tiết & Cảm biến đầu trang (Bấm vào ô để chọn)</h3>
     <div class="row">
       <div>
         <label>Entity Thời tiết (weather.*)</label>
-        <input id="weatherEntity" placeholder="weather.forecast_home">
+        <input id="weatherEntity" list="ha-weather-entities" placeholder="Bấm để chọn weather...">
       </div>
       <div>
         <label>Cảm biến Công suất (W)</label>
-        <input id="powerEntity" placeholder="sensor.cong_suat_tong">
+        <input id="powerEntity" list="ha-sensor-entities" placeholder="Bấm để chọn cảm biến W...">
       </div>
     </div>
     <div class="row">
       <div>
         <label>Cảm biến Nhiệt độ (°C)</label>
-        <input id="tempEntity" placeholder="sensor.nhiet_do">
+        <input id="tempEntity" list="ha-sensor-entities" placeholder="Bấm để chọn cảm biến nhiệt độ...">
       </div>
       <div>
         <label>Cảm biến Độ ẩm (%)</label>
-        <input id="humEntity" placeholder="sensor.do_am">
+        <input id="humEntity" list="ha-sensor-entities" placeholder="Bấm để chọn cảm biến độ ẩm...">
       </div>
     </div>
   </div>
 
   <div class="card">
-    <h3>4. Danh sách Thẻ & Kích thước ô (Kiểu Windows Phone)</h3>
+    <h3>4. Danh sách Thẻ & Kích thước ô (Bấm vào Entity ID để chọn nhanh)</h3>
     <div id="tilesList"></div>
     <button class="btn-add" onclick="addTile()">+ Thêm thẻ mới</button>
   </div>
 
-  <button class="btn-save" onclick="saveConfig()">💾 LƯU & ÁP DỤNG NGAY</button>
+  <button class="btn-save" onclick="saveConfig(true)">💾 LƯU & ÁP DỤNG NGAY</button>
 </div>
 
 <div id="msg">Đã lưu cấu hình thành công!</div>
 
 <script>
 let configData = { tiles: [] };
+let haEntitiesMap = {};
 
 function showToast(text) {
   const m = document.getElementById('msg');
@@ -128,6 +138,69 @@ async function loadConfig() {
   document.getElementById('humEntity').value = configData.humEntity || '';
   document.getElementById('powerEntity').value = configData.powerEntity || '';
   renderTiles();
+  syncHaEntities(false);
+}
+
+async function syncHaEntities(saveFirst) {
+  const badge = document.getElementById('haStatusBadge');
+  badge.innerText = 'Đang lấy danh sách HA...';
+  if (saveFirst) {
+    await saveConfig(false);
+  }
+  try {
+    const res = await fetch('/api/ha_entities?t=' + Date.now());
+    const data = await res.json();
+    if (!res.ok || data.error) {
+      badge.innerText = 'Chưa kết nối HA';
+      badge.style.background = '#7f1d1d';
+      if (saveFirst) alert(data.error || 'Lỗi kết nối HA');
+      return;
+    }
+    const allList = document.getElementById('ha-all-entities');
+    const weatherList = document.getElementById('ha-weather-entities');
+    const sensorList = document.getElementById('ha-sensor-entities');
+    allList.innerHTML = '';
+    weatherList.innerHTML = '';
+    sensorList.innerHTML = '';
+    haEntitiesMap = {};
+
+    data.forEach(item => {
+      haEntitiesMap[item.id] = item;
+      const label = `${item.name} (${item.state}${item.unit ? ' ' + item.unit : ''})`;
+      const optHtml = `<option value="${item.id}">${label}</option>`;
+      allList.insertAdjacentHTML('beforeend', optHtml);
+      if (item.id.startsWith('weather.')) {
+        weatherList.insertAdjacentHTML('beforeend', optHtml);
+      }
+      if (item.id.startsWith('sensor.')) {
+        sensorList.insertAdjacentHTML('beforeend', optHtml);
+      }
+    });
+
+    badge.innerText = `✓ Đã nạp ${data.length} thiết bị HA`;
+    badge.style.background = '#14532d';
+    badge.style.color = '#86efac';
+  } catch (e) {
+    badge.innerText = 'Lỗi tải danh sách HA';
+  }
+}
+
+function onEntitySelected(idx, val) {
+  configData.tiles[idx].entityId = val;
+  const info = haEntitiesMap[val];
+  if (info) {
+    // Tự động điền luôn Tên hiển thị, Loại thẻ và Đơn vị từ Home Assistant!
+    configData.tiles[idx].name = info.name;
+    if (val.startsWith('cover.')) {
+      configData.tiles[idx].type = 'gate';
+    } else if (val.startsWith('sensor.') || val.startsWith('binary_sensor.')) {
+      configData.tiles[idx].type = 'sensor';
+      if (info.unit) configData.tiles[idx].unit = info.unit;
+    } else {
+      configData.tiles[idx].type = 'switch';
+    }
+    renderTiles();
+  }
 }
 
 function renderTiles() {
@@ -147,6 +220,16 @@ function renderTiles() {
         </div>
         <div class="row">
           <div>
+            <label>Entity ID (Bấm hoặc gõ tên để chọn)</label>
+            <input value="${t.entityId || ''}" list="ha-all-entities" placeholder="Bấm để chọn thiết bị HA..." onchange="onEntitySelected(${idx}, this.value)">
+          </div>
+          <div>
+            <label>Tên hiển thị</label>
+            <input value="${t.name || ''}" onchange="configData.tiles[${idx}].name = this.value">
+          </div>
+        </div>
+        <div class="row">
+          <div>
             <label>Kích thước ô</label>
             <select onchange="configData.tiles[${idx}].size = this.value">
               <option value="small" ${sz==='small'?'selected':''}>Nhỏ (1x1 - 1 cột)</option>
@@ -162,16 +245,6 @@ function renderTiles() {
               <option value="gate" ${t.type==='gate'?'selected':''}>Cổng / Cửa cuốn (Mở-Dừng-Đóng)</option>
               <option value="sensor" ${t.type==='sensor'?'selected':''}>Cảm biến hiển thị số</option>
             </select>
-          </div>
-          <div>
-            <label>Tên hiển thị</label>
-            <input value="${t.name || ''}" onchange="configData.tiles[${idx}].name = this.value">
-          </div>
-        </div>
-        <div class="row">
-          <div>
-            <label>Entity ID trong Home Assistant</label>
-            <input value="${t.entityId || ''}" placeholder="light.den_1" onchange="configData.tiles[${idx}].entityId = this.value">
           </div>
           <div>
             <label>Đơn vị (nếu là cảm biến)</label>
@@ -197,7 +270,7 @@ function addTile() {
     type: 'switch',
     size: 'medium',
     name: 'Thiết bị mới',
-    entityId: 'switch.ten_thiet_bi',
+    entityId: '',
     unit: ''
   });
   renderTiles();
@@ -215,7 +288,6 @@ async function uploadWallpaper() {
     return;
   }
   const file = input.files[0];
-  // Nén ảnh trên trình duyệt xuống tối đa 1280px trước khi gửi để máy yếu không bị tràn RAM
   const img = new Image();
   img.src = URL.createObjectURL(file);
   img.onload = async () => {
@@ -241,7 +313,7 @@ async function deleteWallpaper() {
   if (res.ok) showToast('Đã xóa hình nền!');
 }
 
-async function saveConfig() {
+async function saveConfig(notify) {
   configData.haUrl = document.getElementById('haUrl').value;
   configData.haToken = document.getElementById('haToken').value;
   configData.refreshIntervalSec = parseInt(document.getElementById('refreshIntervalSec').value) || 3;
@@ -257,7 +329,9 @@ async function saveConfig() {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(configData)
   });
-  if (res.ok) showToast('Đã lưu cấu hình thành công!');
+  if (res.ok && notify) {
+    showToast('Đã lưu cấu hình thành công!');
+  }
 }
 
 loadConfig();
